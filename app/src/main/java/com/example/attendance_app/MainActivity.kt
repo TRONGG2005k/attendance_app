@@ -2,6 +2,8 @@ package com.example.attendance_app
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
@@ -22,11 +24,14 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
 import com.example.attendance_app.network.RetrofitClient
 import com.google.mlkit.vision.face.Face
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
 import okhttp3.RequestBody.Companion.asRequestBody
 import java.io.File
+import java.io.FileOutputStream
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
@@ -268,12 +273,56 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /**
+     * Resize ảnh về 640x640 và chuyển sang JPG để giảm dung lượng
+     */
+    private fun resizeAndCompressImage(originalFile: File): File {
+        // Decode ảnh gốc
+        val originalBitmap = BitmapFactory.decodeFile(originalFile.absolutePath)
+            ?: throw IllegalArgumentException("Không thể decode ảnh: ${originalFile.absolutePath}")
+
+        // Resize về 640x640
+        val resizedBitmap = Bitmap.createScaledBitmap(originalBitmap, 640, 640, true)
+
+        // Tạo file mới cho ảnh đã resize
+        val resizedFile = File(
+            cacheDir,
+            "face_resized_${System.currentTimeMillis()}.jpg"
+        )
+
+        // Nén và lưu với chất lượng 85% để giảm dung lượng
+        FileOutputStream(resizedFile).use { outputStream ->
+            resizedBitmap.compress(Bitmap.CompressFormat.JPEG, 85, outputStream)
+        }
+
+        // Giải phóng bộ nhớ
+        if (originalBitmap != resizedBitmap) {
+            originalBitmap.recycle()
+        }
+        resizedBitmap.recycle()
+
+        // Log kích thước file trước và sau
+        val originalSize = originalFile.length() / 1024 // KB
+        val resizedSize = resizedFile.length() / 1024 // KB
+        android.util.Log.d(
+            "FaceCapture",
+            "Image resized: ${originalSize}KB -> ${resizedSize}KB (${resizedSize * 100 / originalSize}%)"
+        )
+
+        return resizedFile
+    }
+
     private fun uploadAndScanFace(photoFile: File) {
         lifecycleScope.launch {
             try {
-                // Create MultipartBody.Part from file
-                val requestFile = photoFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
-                val body = MultipartBody.Part.createFormData("file", photoFile.name, requestFile)
+                // Resize và nén ảnh trước khi gửi API
+                val processedFile = withContext(Dispatchers.IO) {
+                    resizeAndCompressImage(photoFile)
+                }
+
+                // Create MultipartBody.Part from processed file
+                val requestFile = processedFile.asRequestBody("image/jpeg".toMediaTypeOrNull())
+                val body = MultipartBody.Part.createFormData("file", processedFile.name, requestFile)
 
                 // Call API
                 val response = RetrofitClient.attendanceApiService.scanFace(body)

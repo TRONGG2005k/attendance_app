@@ -7,7 +7,7 @@ import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitClient {
     
-    private const val BASE_URL = "https://hrm-app.duckdns.org/"
+    private const val BASE_URL = "https://tn0964755528-hrm.hf.space"
     
     private val loggingInterceptor = HttpLoggingInterceptor().apply {
         level = HttpLoggingInterceptor.Level.BODY
